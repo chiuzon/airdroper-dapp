@@ -1,4 +1,5 @@
 import preprocess from 'svelte-preprocess';
+import netlify from '@sveltejs/adapter-netlify'
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -6,6 +7,7 @@ const config = {
 	// for more information about preprocessors
 	preprocess: preprocess(),
 	kit: {
+		adapter: netlify(),
 		ssr: false,
 		// hydrate the <div id="svelte"> element in src/app.html
 		target: '#svelte'
