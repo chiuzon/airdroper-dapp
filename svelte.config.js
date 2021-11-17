@@ -10,7 +10,12 @@ const config = {
 		adapter: netlify(),
 		ssr: false,
 		// hydrate the <div id="svelte"> element in src/app.html
-		target: '#svelte'
+		target: '#svelte',
+		vite: {
+			build: {
+				target: [ 'es6' ]
+			}
+		}
 	}
 };
 
