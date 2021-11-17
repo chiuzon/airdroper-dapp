@@ -1,15 +1,9 @@
 <script lang="ts">
 	import { svelteWeb3 } from '@chiuzon/svelteweb3'
-    import { InjectedConnector } from '@web3-react/injected-connector'
-
-    import {ethers} from 'ethers'
+    import {injectedConnector} from '$lib/constants'
+    import ConnectedView from './ConnectedView.svelte';
 
     const { activate, error, account } = svelteWeb3()
-    
-    const injectedConnector = new InjectedConnector({
-        //You can specify what chains you want to support
-        supportedChainIds: [3]
-    })
 
     const onConnectButton = async () => {
         await activate(injectedConnector, async (e) => {
@@ -19,14 +13,17 @@
     }
 </script>
 
-<h1>Hello</h1>
+<h1>TokenAirdroper on Telos</h1>
 
 <div class="connect-box">
-    {$error ?? 'Please use Ropsten Network'}
-    { $account && ethers.utils.getAddress($account)}
-    <button on:click={onConnectButton}>
-        Connect
-    </button>
+    {#if $account}
+        <ConnectedView />
+    {:else}
+        <p>{$error ?? 'Please use chainId 40 / TelosEVM Mainnet'}</p>
+        <button on:click={onConnectButton}>
+            Connect
+        </button>
+    {/if}
 </div>
 
 <style>

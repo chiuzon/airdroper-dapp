@@ -13,3 +13,19 @@
 <Web3Wrapper fetchLibrary={fetchLibrary}>
     <slot />
 </Web3Wrapper>
+
+
+<style global>
+    button {
+        padding: 5px 5px;
+    }
+
+    input {
+        padding: 5px 5px;
+        border-radius: 5px;
+    }
+
+    .connect-box {
+        font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+</style>
