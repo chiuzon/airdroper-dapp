@@ -1,266 +1,250 @@
 <script lang="ts">
     import { svelteWeb3 } from '@chiuzon/svelteweb3'
-import { BigNumber, ethers } from 'ethers';
-import { onMount } from 'svelte';
+    import { BigNumber, ethers } from 'ethers';
+    import { errorStore } from '$lib/stores/errorStore';
+    import { _if } from '$lib/helpers/renderHelper'
+    import { airdropContract, aidropFee, erc20Contract } from '$lib/stores/contractStores';
+    import { isTokenValid } from '$lib/helpers/tokenHelper';
 
     const { library, account} = svelteWeb3()
+    const { error: pageErrors , onError } = errorStore()
+    const airdropContractInstance = airdropContract()
 
-    const AirdropAddress = "0xbc2356C24E01c5e021e87b006433aCeF03106870"
+    let tokenContract
+    let airdropList = []
+
+    let formAddressInput
+    let formAmountInput
     
-    let tokenContract;
-    let tokenAddress;
-    let tokenTax;
+    $: tokenDecimals = $tokenContract?.decimals().then((result) => {
+        tokenDecimals = {
+            BN: result,
+            formated: result.toString()
+        }
+    })
 
-    let airdrops = []
+    $: tokenName = $tokenContract?.name().then((result) => {
+        tokenName = result
+    })
 
-    const AirdropABI = [
-        "function telosTax() public view returns(uint256)",
-        "function airdrop(address tokenAddress,address[] calldata addressList,uint256[] calldata amountList) public payable"
-    ]
+    $: isApproved = $tokenContract?.allowance($account, $airdropContractInstance.address).then((result) => {
+        isApproved = BigNumber.from(result) > BigNumber.from(0)
+    })
 
-    const ERC20Abi = [
-        "function balanceOf(address account) external view returns (uint256)",
-        "function decimals() external view returns (uint8)",
-        "function allowance(address _owner, address spender) external view returns (uint256)",
-        "function approve(address spender, uint256 amount) external returns (bool)"
-    ]
+    $: tokenBalance = $tokenContract?.balanceOf($account).then((result) => {
+        tokenBalance = {
+            BN: BigNumber.from(result),
+            formated:  ethers.utils.formatUnits(result, tokenDecimals.BN)
+        }
+    })
 
-    const airdropContract = new ethers.Contract(AirdropAddress, AirdropABI, $library.getSigner())
+    $: requiredAmount = ((arr: any[]) => {
+        if(arr.length <= 0){
+            return {
+                BN: BigNumber.from("0"),
+                formated: "0"
+            }
+        }
+
+        let total = BigNumber.from("0")
+
+        arr.forEach((val) => {
+            total = total.add(val.amount)
+        })
+
+        return {
+            BN: total,
+            formated: ethers.utils.formatUnits(total, tokenDecimals.BN)
+        }
+    })(airdropList)
 
     const onTokenAddressChange = (e: any) => {
         if(e.currentTarget.value.length <= 0){
-            return
-        }
-        
-        if(ethers.utils.isAddress(e.currentTarget.value)){
-            tokenAddress = ethers.utils.getAddress(e.currentTarget.value)
-
-            if(isTokenValid(tokenAddress)){
-                tokenContract = new ethers.Contract(tokenAddress, ERC20Abi, $library.getSigner())
-            }
-        }
-    }
-
-    function isTokenValid(tokenAddr: string) {
-        try {
-            return new ethers.Contract(tokenAddr, ERC20Abi, $library.getSigner())
-        }catch{
-            return false
-        }
-    }
-
-    let airdropAddress;
-    let airdropAmount;
-
-    let tokenDecimals;
-    let isAllowed;
-
-    let accountBalance;
-
-    $: tokenContract && (async () => {
-        try{
-            const tD = await tokenContract.decimals()
-
-            tokenDecimals = tD.toString()
-        }catch{
-            console.error("Couldn't fetch decimals")
-        }
-    })()
-
-    async function checkAllowance() {
-        const allowance = await tokenContract.allowance($account, airdropContract.address)
-        console.log(allowance.toString())
-        isAllowed = BigNumber.from(allowance) > BigNumber.from(0)
-    }
-
-    $: tokenContract && checkAllowance()
-
-    $: tokenContract && (async () => {
-        const bal = await tokenContract.balanceOf($account)
-        
-        accountBalance = bal
-    })()
-
-
-    function onAddNewAirdrop() {
-        if(!ethers.utils.isAddress(airdropAddress)){
             return;
         }
 
-       if(Number.isNaN(airdropAmount)){
-            return
-       }
-
-       if(airdropAmount <= 0){
-           return
-       }
-
-        airdrops.push({
-            address: airdropAddress,
-            amount: ethers.utils.parseUnits(`${airdropAmount}`, tokenDecimals)
-        })
-
-        airdrops = airdrops
-
-        airdropAddress = ""
-        airdropAmount = ""
-
-        console.log(airdrops)
-    }   
-
-    onMount(async () => {
-        const rawTaxFee = await airdropContract.telosTax()
-        
-
-        tokenTax = ethers.utils.formatEther(rawTaxFee)
-    })
-
-    function _if(condition, object){
-        try{
-            return condition ? object : ''
-        }catch{
-            return ''
+        if(!ethers.utils.isAddress(e.currentTarget.value)){
+            return;
         }
+
+        if(!isTokenValid(e.currentTarget.value)){
+            return;
+        }
+
+        tokenContract = erc20Contract(e.currentTarget.value)
     }
 
-    async function allowTokenUse() {
-        const approveTX = await tokenContract.approve(airdropContract.address, ethers.utils.parseEther("100000000000000"))
+    const addAirdropNewElement = () => {
+        if(!ethers.utils.isAddress(formAddressInput)){
+            onError("Invalid Address")
+            return;
+        }
+
+        if(Number.isNaN(formAmountInput)){
+            onError("Input just numbers")
+            return
+        }
+
+        if(formAmountInput <= 0){
+           onError("Can't send 0 amount")
+           return
+        }
+
+        airdropList.push({
+            address: formAddressInput,
+            amount: ethers.utils.parseUnits(`${formAmountInput}`, tokenDecimals.BN)
+        })
+
+        airdropList = airdropList
+
+        formAddressInput = ""
+        formAmountInput = ""
+    }
+
+    async function approveTokenUsage() {
+        const approveTX = await $tokenContract.connect($library.getSigner()).approve($airdropContractInstance.address, ethers.utils.parseEther("100000000000000"))
 
         await approveTX.wait()
 
-        await checkAllowance()
+        $tokenContract?.allowance($account, $airdropContractInstance.address).then((result) => {
+            isApproved = BigNumber.from(result) > BigNumber.from(0)
+        })
     }
 
-    async function airdrop() {
-        if(airdrops.length <= 0){
+    async function airdropTokens() {
+        if(airdropList.length <= 0){
+            onError("Airdrop list is empty!")
             return;
         }
 
-        if(getTotalAmountRequiredBN(airdrops) < accountBalance ){
+        if(requiredAmount.BN.gt(tokenBalance.BN )){
+            console.log(tokenBalance)
+            console.log(requiredAmount)
+            onError("Not enough tokens!")
             return;
         }
 
-        const addresses = airdrops.map((value) => value.address)
-        const amounts =  airdrops.map((value) => value.amount)
-        console.log(addresses)
-        console.log(amounts)
+        const addresses = airdropList.map((value) => value.address)
+        const amounts =  airdropList.map((value) => value.amount)
 
-        const rawTaxFee = await airdropContract.telosTax()
+        try{
+            const taxFee = await $aidropFee
 
-        const airdropTX = await airdropContract.airdrop(
-            tokenContract.address,
+            const airdropTX = await $airdropContractInstance.airdrop(
+            $tokenContract.address,
             addresses,
             amounts,
-            {
-                value: rawTaxFee
-            }
-        )
+                {
+                 value: taxFee.bnTax
+                }
+            )
 
-        await airdropTX.wait()
-    }   
+            onError("Sending airdrop...")
 
-    function getTotalAmountRequiredBN(airdropArr) {
-        if(airdropArr.length <= 0){
-            return ''
+            await airdropTX.wait()
+
+            onError("Airdrop sent")
+        }catch(e){
+            onError(e)
         }
-
-        let total = BigNumber.from("0")
-
-        airdropArr.forEach((val) => {
-            total = total.add(val.amount)
-        })
-
-        return total
-    }
-
-    function getTotalAmountRequired(airdropArr) {
-        if(airdropArr.length <= 0){
-            return ''
-        }
-
-        let total = BigNumber.from("0")
-
-        airdropArr.forEach((val) => {
-            total = total.add(val.amount)
-        })
-
-        return ethers.utils.formatUnits(total, tokenDecimals)
     }
 </script>
-<p class="">Info: Decimals are added by default </p>
-<p>Connected as: {$account}</p>
-<p>Dapp Fee: {`${tokenTax} TLOS` ?? ''} </p>
-{#if !tokenContract}
-    <h2>Token Address: <input on:change={onTokenAddressChange} /></h2>
-    
-    {!tokenAddress ? 'Invalid Token Address' : ''}
 
+{#if $pageErrors}
+    <div class="box">
+        <p class="has-text-danger has-text-weight-bold">{$pageErrors}</p>
+    </div>
 {/if}
 
-<p>{_if(tokenAddress,`Token Address: ${tokenAddress}`)}</p>
-<p>{_if(tokenDecimals,`Token Decimals: ${tokenDecimals}`)}</p>
+<div class="box">
+    <p class="has-text-info has-text-weight-semibold">Info: Decimals are added by default </p>
+    {#await $aidropFee then taxFee}
+        <p>Dapp Fee: {`${taxFee.tax} TLOS` ?? ''}</p>
+    {/await}
+</div>
 
-{#if isTokenValid(tokenAddress)}
-    <hr />
-    <div class="list-box">
-        {#each airdrops as airdrop, index }
-            <p>Address: {airdrop.address} | Amount: {ethers.utils.formatUnits(airdrop.amount, tokenDecimals)}| <button class="btn close" on:click={() => {
-                airdrops = airdrops.filter((_m, i) => i !== index);
-            }}>X</button></p>
-        {/each}
+{#if $tokenContract}
+    <div class="box">
+        <p class="has-text-weight-semibold">Token Address: {$tokenContract.address}</p>
+        <p>Token Name: {_if(tokenName, `${tokenName}`)}</p>
+        <p>Token Decimals: {_if(tokenDecimals, `${tokenDecimals.formated}`)}</p>
+    </div>
 
-        {#if airdrops.length <= 0}
-            <p>0 addresses to airdrop too, please add an address</p>
-        {/if}
+    <div class="box table-container">
+        <table class="table is-fullwidth is-narrow">
+            <thead>
+              <tr>
+                <th><abbr title="index">Index</abbr></th>
+                <th>Address</th>
+                <th>Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+            {#if airdropList.length > 0}
+                {#each airdropList as airdrop, index }
+                    <tr>
+                        <td>{index}</td>
+                        <td>{airdrop.address}</td>
+                        <td>{_if(tokenDecimals, `${ethers.utils.formatUnits(airdrop.amount, tokenDecimals.BN)}`)}</td>
+                        <td>
+                            <button class="button is-small is-danger" on:click={() => {
+                                airdropList = airdropList.filter((_e, i) => i !== index)
+                            }}>Delete</button>
+                        </td>
+                    </tr>
+                {/each}
+            {/if}
+            <tr>
+                <td></td>
+                <td class="control is-expanded">
+                    <input bind:value={formAddressInput} class="input" type="text" placeholder="0xE1C110E1B1b4A1deD0cAf3E42BfBdbB7b5d7cE1C">
+                </td>
+                <td class="control is-expanded">
+                    <input bind:value={formAmountInput} class="input" type="number" placeholder="1">
+                </td>
+                <td class="control">
+                    <button on:click={addAirdropNewElement} class="button is-info">
+                        Add Address
+                    </button>
+                </td>
+            </tr>
+            </tbody>
+          </table>
     </div>
-    
-    <hr />
-    <div class="input-box">
-        <p>Address: <input bind:value={airdropAddress} placeholder="0x4c6996..." /></p>
-        <p>Amount to send: <input bind:value={airdropAmount} type="number" /></p>
-        <p><button on:click={onAddNewAirdrop}>Add Address in Airdrop List</button></p>
+
+    {#if airdropList.length > 0}
+        <div class="box">
+            <div class="field is-grouped">
+                <p class="control is-expanded">
+                    Token Balance: {_if(tokenBalance, `${tokenBalance.formated}`)}
+                </p>
+
+                <p class="control is-expanded">
+                    Required Token Amount: {_if(requiredAmount, `${requiredAmount.formated}`)}
+                </p>
+                
+                <p class="control">
+                    {#if isApproved}
+                        <button on:click={airdropTokens} class="button is-info">
+                           Send airdrop
+                        </button>
+                    {:else}
+                        <button on:click={approveTokenUsage} class="button is-success">
+                            Allow {_if(tokenName, `${tokenName}`)}
+                        </button>
+                    {/if}
+                </p>
+            </div>
+        </div>
+    {/if}
+{:else}
+<div class="box">
+    <div class="field">
+      <label for="tokenAddress" class="label">Token Address</label>
+      <div id="tokenAddress" class="control">
+        <input on:change|preventDefault={onTokenAddressChange} class="input" placeholder="0xE1C110E1B1b4A1deD0cAf3E42BfBdbB7b5d7cE1C">
+      </div>
     </div>
-    <hr />
-    {#if airdrops.length > 0}
-        <p>Available Amount: { _if(accountBalance, `${ethers.utils.formatUnits(`${accountBalance}`, tokenDecimals)}`)}</p>
-        <p>Total Required: {getTotalAmountRequired(airdrops)}</p>
-    {/if}
-    <hr />
-    {#if isAllowed }
-        <button on:click={airdrop}>Send airdrop</button>
-    {:else}
-        <button on:click={allowTokenUse}>Allow Token Usage</button>
-    {/if}
+</div>
 {/if}
-
-<style>
-    .list-box {
-        padding: 5px;
-        border-width: 1px;
-        border-color: rgb(49, 47, 47);
-        border-style: solid;
-
-        background-color: rgba(0, 0, 0, 0.376);
-
-        overflow: auto;
-        max-height: 10rem;
-    }
-
-    .input-box {
-
-        padding: 5px;
-        border-width: 1px;
-        border-color: black;
-        border-style: solid;
-
-        background-color: rgba(0, 0, 0, 0.575);
-    }
-
-    .btn.close {
-        padding: 10px;
-        background-color: rgb(98, 0, 0);
-        color: red;
-
-        border-style: none;
-    }
-</style>

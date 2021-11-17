@@ -1,34 +1,19 @@
 <script lang="ts">
 	import { svelteWeb3 } from '@chiuzon/svelteweb3'
-    import {injectedConnector} from '$lib/constants'
     import ConnectedView from './ConnectedView.svelte';
+    import ConnectButton from '$lib/components/ConnectButton.svelte'
+    const { error, account } = svelteWeb3()
 
-    const { activate, error, account } = svelteWeb3()
-
-    const onConnectButton = async () => {
-        await activate(injectedConnector, async (e) => {
-            //You can ask here the user if he wanna switch networks or show a popup modal
-            console.error(e)
-        })
-    }
 </script>
 
-<h1>TokenAirdroper on Telos</h1>
+
 
 <div class="connect-box">
     {#if $account}
         <ConnectedView />
     {:else}
-        <p>{$error ?? 'Please use chainId 40 / TelosEVM Mainnet'}</p>
-        <button on:click={onConnectButton}>
-            Connect
-        </button>
+        <p class="is-size-5 has-text-weight-semibold">{$error ?? 'Please use ChainId 40 / TelosEVM Mainnet'}</p>
+        <ConnectButton />
     {/if}
 </div>
 
-<style>
-    .connect-box {
-        display: flex;
-        flex-direction: column;
-    }
-</style>
