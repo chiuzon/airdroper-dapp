@@ -31,12 +31,10 @@
     "svelte-check": "^2.2.6",
     "svelte-preprocess": "^4.9.4",
     "tslib": "^2.3.1",
-    "typescript": "^4.4.3"
-  },
-  "type": "module",
-  "dependencies": {
+    "typescript": "^4.4.3",
     "bufferutil": "^4.0.5",
     "js-sha3": "^0.8.0",
     "utf-8-validate": "^5.0.7"
-  }
+  },
+  "type": "module"
 }

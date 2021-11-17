@@ -29934,6 +29934,227 @@ var require_constants = __commonJS({
   }
 });
 
+// node_modules/node-gyp-build/index.js
+var require_node_gyp_build = __commonJS({
+  "node_modules/node-gyp-build/index.js"(exports, module2) {
+    init_shims();
+    var fs = require("fs");
+    var path = require("path");
+    var os = require("os");
+    var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : require;
+    var vars = process.config && process.config.variables || {};
+    var prebuildsOnly = !!process.env.PREBUILDS_ONLY;
+    var abi = process.versions.modules;
+    var runtime = isElectron() ? "electron" : "node";
+    var arch = os.arch();
+    var platform = os.platform();
+    var libc = process.env.LIBC || (isAlpine(platform) ? "musl" : "glibc");
+    var armv = process.env.ARM_VERSION || (arch === "arm64" ? "8" : vars.arm_version) || "";
+    var uv = (process.versions.uv || "").split(".")[0];
+    module2.exports = load2;
+    function load2(dir) {
+      return runtimeRequire(load2.path(dir));
+    }
+    load2.path = function(dir) {
+      dir = path.resolve(dir || ".");
+      try {
+        var name2 = runtimeRequire(path.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
+        if (process.env[name2 + "_PREBUILD"])
+          dir = process.env[name2 + "_PREBUILD"];
+      } catch (err) {
+      }
+      if (!prebuildsOnly) {
+        var release = getFirst(path.join(dir, "build/Release"), matchBuild);
+        if (release)
+          return release;
+        var debug = getFirst(path.join(dir, "build/Debug"), matchBuild);
+        if (debug)
+          return debug;
+      }
+      var prebuild = resolve2(dir);
+      if (prebuild)
+        return prebuild;
+      var nearby = resolve2(path.dirname(process.execPath));
+      if (nearby)
+        return nearby;
+      var target = [
+        "platform=" + platform,
+        "arch=" + arch,
+        "runtime=" + runtime,
+        "abi=" + abi,
+        "uv=" + uv,
+        armv ? "armv=" + armv : "",
+        "libc=" + libc,
+        "node=" + process.versions.node,
+        process.versions.electron ? "electron=" + process.versions.electron : "",
+        typeof __webpack_require__ === "function" ? "webpack=true" : ""
+      ].filter(Boolean).join(" ");
+      throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
+      function resolve2(dir2) {
+        var tuples = readdirSync(path.join(dir2, "prebuilds")).map(parseTuple);
+        var tuple = tuples.filter(matchTuple(platform, arch)).sort(compareTuples)[0];
+        if (!tuple)
+          return;
+        var prebuilds = path.join(dir2, "prebuilds", tuple.name);
+        var parsed = readdirSync(prebuilds).map(parseTags);
+        var candidates = parsed.filter(matchTags(runtime, abi));
+        var winner = candidates.sort(compareTags(runtime))[0];
+        if (winner)
+          return path.join(prebuilds, winner.file);
+      }
+    };
+    function readdirSync(dir) {
+      try {
+        return fs.readdirSync(dir);
+      } catch (err) {
+        return [];
+      }
+    }
+    function getFirst(dir, filter) {
+      var files = readdirSync(dir).filter(filter);
+      return files[0] && path.join(dir, files[0]);
+    }
+    function matchBuild(name2) {
+      return /\.node$/.test(name2);
+    }
+    function parseTuple(name2) {
+      var arr = name2.split("-");
+      if (arr.length !== 2)
+        return;
+      var platform2 = arr[0];
+      var architectures = arr[1].split("+");
+      if (!platform2)
+        return;
+      if (!architectures.length)
+        return;
+      if (!architectures.every(Boolean))
+        return;
+      return { name: name2, platform: platform2, architectures };
+    }
+    function matchTuple(platform2, arch2) {
+      return function(tuple) {
+        if (tuple == null)
+          return false;
+        if (tuple.platform !== platform2)
+          return false;
+        return tuple.architectures.includes(arch2);
+      };
+    }
+    function compareTuples(a, b) {
+      return a.architectures.length - b.architectures.length;
+    }
+    function parseTags(file) {
+      var arr = file.split(".");
+      var extension = arr.pop();
+      var tags = { file, specificity: 0 };
+      if (extension !== "node")
+        return;
+      for (var i = 0; i < arr.length; i++) {
+        var tag = arr[i];
+        if (tag === "node" || tag === "electron" || tag === "node-webkit") {
+          tags.runtime = tag;
+        } else if (tag === "napi") {
+          tags.napi = true;
+        } else if (tag.slice(0, 3) === "abi") {
+          tags.abi = tag.slice(3);
+        } else if (tag.slice(0, 2) === "uv") {
+          tags.uv = tag.slice(2);
+        } else if (tag.slice(0, 4) === "armv") {
+          tags.armv = tag.slice(4);
+        } else if (tag === "glibc" || tag === "musl") {
+          tags.libc = tag;
+        } else {
+          continue;
+        }
+        tags.specificity++;
+      }
+      return tags;
+    }
+    function matchTags(runtime2, abi2) {
+      return function(tags) {
+        if (tags == null)
+          return false;
+        if (tags.runtime !== runtime2 && !runtimeAgnostic(tags))
+          return false;
+        if (tags.abi !== abi2 && !tags.napi)
+          return false;
+        if (tags.uv && tags.uv !== uv)
+          return false;
+        if (tags.armv && tags.armv !== armv)
+          return false;
+        if (tags.libc && tags.libc !== libc)
+          return false;
+        return true;
+      };
+    }
+    function runtimeAgnostic(tags) {
+      return tags.runtime === "node" && tags.napi;
+    }
+    function compareTags(runtime2) {
+      return function(a, b) {
+        if (a.runtime !== b.runtime) {
+          return a.runtime === runtime2 ? -1 : 1;
+        } else if (a.abi !== b.abi) {
+          return a.abi ? -1 : 1;
+        } else if (a.specificity !== b.specificity) {
+          return a.specificity > b.specificity ? -1 : 1;
+        } else {
+          return 0;
+        }
+      };
+    }
+    function isElectron() {
+      if (process.versions && process.versions.electron)
+        return true;
+      if (process.env.ELECTRON_RUN_AS_NODE)
+        return true;
+      return typeof window !== "undefined" && window.process && window.process.type === "renderer";
+    }
+    function isAlpine(platform2) {
+      return platform2 === "linux" && fs.existsSync("/etc/alpine-release");
+    }
+    load2.parseTags = parseTags;
+    load2.matchTags = matchTags;
+    load2.compareTags = compareTags;
+    load2.parseTuple = parseTuple;
+    load2.matchTuple = matchTuple;
+    load2.compareTuples = compareTuples;
+  }
+});
+
+// node_modules/bufferutil/fallback.js
+var require_fallback = __commonJS({
+  "node_modules/bufferutil/fallback.js"(exports, module2) {
+    init_shims();
+    "use strict";
+    var mask = (source, mask2, output, offset, length) => {
+      for (var i = 0; i < length; i++) {
+        output[offset + i] = source[i] ^ mask2[i & 3];
+      }
+    };
+    var unmask = (buffer, mask2) => {
+      const length = buffer.length;
+      for (var i = 0; i < length; i++) {
+        buffer[i] ^= mask2[i & 3];
+      }
+    };
+    module2.exports = { mask, unmask };
+  }
+});
+
+// node_modules/bufferutil/index.js
+var require_bufferutil = __commonJS({
+  "node_modules/bufferutil/index.js"(exports, module2) {
+    init_shims();
+    "use strict";
+    try {
+      module2.exports = require_node_gyp_build()(__dirname);
+    } catch (e) {
+      module2.exports = require_fallback();
+    }
+  }
+});
+
 // node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
   "node_modules/ws/lib/buffer-util.js"(exports, module2) {
@@ -29989,7 +30210,7 @@ var require_buffer_util = __commonJS({
       return buf;
     }
     try {
-      const bufferUtil = require("bufferutil");
+      const bufferUtil = require_bufferutil();
       const bu = bufferUtil.BufferUtil || bufferUtil;
       module2.exports = {
         concat,
@@ -30316,6 +30537,55 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
+// node_modules/utf-8-validate/fallback.js
+var require_fallback2 = __commonJS({
+  "node_modules/utf-8-validate/fallback.js"(exports, module2) {
+    init_shims();
+    "use strict";
+    function isValidUTF8(buf) {
+      const len = buf.length;
+      let i = 0;
+      while (i < len) {
+        if ((buf[i] & 128) === 0) {
+          i++;
+        } else if ((buf[i] & 224) === 192) {
+          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
+            return false;
+          }
+          i += 2;
+        } else if ((buf[i] & 240) === 224) {
+          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || buf[i] === 237 && (buf[i + 1] & 224) === 160) {
+            return false;
+          }
+          i += 3;
+        } else if ((buf[i] & 248) === 240) {
+          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
+            return false;
+          }
+          i += 4;
+        } else {
+          return false;
+        }
+      }
+      return true;
+    }
+    module2.exports = isValidUTF8;
+  }
+});
+
+// node_modules/utf-8-validate/index.js
+var require_utf_8_validate = __commonJS({
+  "node_modules/utf-8-validate/index.js"(exports, module2) {
+    init_shims();
+    "use strict";
+    try {
+      module2.exports = require_node_gyp_build()(__dirname);
+    } catch (e) {
+      module2.exports = require_fallback2();
+    }
+  }
+});
+
 // node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
   "node_modules/ws/lib/validation.js"(exports, module2) {
@@ -30352,7 +30622,7 @@ var require_validation = __commonJS({
       return true;
     }
     try {
-      let isValidUTF8 = require("utf-8-validate");
+      let isValidUTF8 = require_utf_8_validate();
       if (typeof isValidUTF8 === "object") {
         isValidUTF8 = isValidUTF8.Validation.isValidUTF8;
       }
